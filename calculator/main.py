@@ -1,4 +1,5 @@
 import flet as ft
+import math
 
 
 class CalcButton(ft.ElevatedButton):
@@ -31,6 +32,13 @@ class ExtraActionButton(CalcButton):
         self.color = ft.colors.BLACK
 
 
+class SciButton(CalcButton):
+    def __init__(self, text, button_clicked):
+        CalcButton.__init__(self, text, button_clicked)
+        self.bgcolor = ft.colors.GREEN
+        self.color = ft.colors.WHITE
+
+
 class CalculatorApp(ft.Container):
     # application's root control (i.e. "view") containing all other controls
     def __init__(self):
@@ -38,10 +46,10 @@ class CalculatorApp(ft.Container):
         self.reset()
 
         self.result = ft.Text(value="0", color=ft.colors.WHITE, size=20)
-        self.width = 350
+        self.width = 355
         self.bgcolor = ft.colors.BLACK
         self.border_radius = ft.border_radius.all(20)
-        self.padding = 20
+        self.padding = 18
         self.content = ft.Column(
             controls=[
                 ft.Row(controls=[self.result], alignment="end"),
@@ -54,6 +62,22 @@ class CalculatorApp(ft.Container):
                             text="+/-", button_clicked=self.button_clicked
                         ),
                         ExtraActionButton(text="%", button_clicked=self.button_clicked),
+                        SciButton(text="log", button_clicked=self.button_clicked),
+                    ]
+                ),
+                ft.Row(
+                    controls=[
+                        SciButton(text="e", button_clicked=self.button_clicked),
+                        SciButton(text="π", button_clicked=self.button_clicked),
+                        SciButton(text="√", button_clicked=self.button_clicked),
+                        SciButton(text="x²", button_clicked=self.button_clicked),
+                    ]
+                ),
+                ft.Row(
+                    controls=[
+                        SciButton(text="sin", button_clicked=self.button_clicked),
+                        SciButton(text="cos", button_clicked=self.button_clicked),
+                        SciButton(text="tan", button_clicked=self.button_clicked),
                         ActionButton(text="/", button_clicked=self.button_clicked),
                     ]
                 ),
@@ -137,6 +161,9 @@ class CalculatorApp(ft.Container):
                     self.format_number(abs(float(self.result.value)))
                 )
 
+        elif data in ("sin", "cos", "tan", "e", "π", "√", "x²", "log"):
+            self.result.value = self.calculate_sci(float(self.result.value), data)
+
         self.update()
 
     def format_number(self, num):
@@ -161,6 +188,38 @@ class CalculatorApp(ft.Container):
                 return "Error"
             else:
                 return self.format_number(operand1 / operand2)
+
+    def calculate_sci(self, operand, operator):
+
+        if operator == "sin":
+            return self.format_number(math.sin(math.radians(operand)))
+
+        elif operator == "cos":
+            return self.format_number(math.cos(math.radians(operand)))
+
+        elif operator == "tan":
+            return self.format_number(math.tan(math.radians(operand)))
+
+        elif operator == "e":
+            return self.format_number(math.e)
+
+        elif operator == "π":
+            return self.format_number(math.pi)
+
+        elif operator == "√":
+            if operand < 0:
+                return "Error"
+            else:
+                return self.format_number(math.sqrt(operand))
+
+        elif operator == "x²":
+            return self.format_number(operand ** 2)
+
+        elif operator == "log":
+            if operand <= 0:
+                return "Error"
+            else:
+                return self.format_number(math.log10(operand))
 
     def reset(self):
         self.operator = "+"
