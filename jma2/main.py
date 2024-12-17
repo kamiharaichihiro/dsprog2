@@ -1,11 +1,29 @@
 import flet as ft
 import requests
 import json
+import sqlite3
 
-# ローカルの天気アイコンデータを格納したJSONファイルのパス
-WEATHER_ICONS_JSON_PATH = "/Users/chihiro/dsprog2/dsprog2/jma2/weather_codes.json"  # ローカルJSONファイルのパス
+WEATHER_ICONS_JSON_PATH = "/Users/chihiro/DS-Prog2/jma/weather_codes.json" 
 
-# ローカルJSONファイルからアイコンの情報を読み込む
+def create_db():
+    """SQLiteデータベースとテーブルを作成"""
+    conn = sqlite3.connect('weather_forecast.db')
+    c = conn.cursor()
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS weather_forecasts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            area_code TEXT,
+            forecast_date TEXT,
+            weather TEXT,
+            temp_max INTEGER,
+            temp_min INTEGER,
+            pop INTEGER,
+            icon_filename TEXT
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
 def load_weather_icons(json_path):
     """ローカルJSONファイルから天気アイコンデータを読み取る"""
     try:
@@ -15,7 +33,6 @@ def load_weather_icons(json_path):
         print(f"Error loading weather icons JSON file: {e}")
         return {}
 
-# 天気予報APIのURL（地域コードを使ってデータを取得）
 FORECAST_URL = "https://www.jma.go.jp/bosai/forecast/data/forecast/{code}.json"
 
 def fetch_weather_data(area_code):
@@ -38,27 +55,71 @@ def load_area_list(json_path):
         print(f"Error loading JSON file: {e}")
         return {}
 
+def save_weather_data_to_db(area_code, weather_data, weather_icons):
+    """天気予報データをデータベースに保存"""
+    conn = sqlite3.connect('weather_forecast.db')
+    c = conn.cursor()
+    
+    for data in weather_data:
+        time_series = data.get("timeSeries", [])
+        for time_data in time_series:
+            areas = time_data.get("areas", [])
+            for area in areas:
+                if area["area"]["code"] == area_code:
+                    dates = time_data.get("timeDefines", [])
+                    temps_max = area.get("tempsMax", [])
+                    temps_min = area.get("tempsMin", [])
+                    for i, date in enumerate(dates[:7]): 
+                        weather_code = area.get("weatherCodes", [])[i] if i < len(area.get("weatherCodes", [])) else None
+                        weather_desc = area.get("weathers", [])[i] if i < len(area.get("weathers", [])) else "天気データなし"
+                        
+                        icon_filename = weather_icons.get(str(weather_code), [None])[0]
+                        
+                        temp_max = temps_max[i] if i < len(temps_max) else "データなし"
+                        temp_min = temps_min[i] if i < len(temps_min) else "データなし"
+                        pop = area.get("pops", [])[i] if i < len(area.get("pops", [])) else "データなし"
+                        
+                        c.execute('''
+                            INSERT INTO weather_forecasts (area_code, forecast_date, weather, temp_max, temp_min, pop, icon_filename)
+                            VALUES (?, ?, ?, ?, ?, ?, ?)
+                        ''', (area_code, date, weather_desc, temp_max, temp_min, pop, icon_filename))
+    
+    conn.commit()
+    conn.close()
+
+def get_weather_data_from_db(area_code, selected_date=None):
+    """データベースから天気予報データを取得"""
+    conn = sqlite3.connect('weather_forecast.db')
+    c = conn.cursor()
+    if selected_date:
+        c.execute('''
+            SELECT * FROM weather_forecasts WHERE area_code = ? AND forecast_date = ?
+        ''', (area_code, selected_date))
+    else:
+        c.execute('''
+            SELECT * FROM weather_forecasts WHERE area_code = ?
+        ''', (area_code,))
+    forecasts = c.fetchall()
+    conn.close()
+    return forecasts
+
 def main(page: ft.Page):
     page.title = "一週間の天気予報"
 
-    # 地域データを読み込む
-    area_list = load_area_list("/Users/chihiro/dsprog2/dsprog2/jma2/weather.json")
+    area_list = load_area_list("/Users/chihiro/DS-Prog2/jma/weather.json")
     if not area_list:
         page.add(ft.Text("地域データの読み込みに失敗しました。"))
         return
 
-    # 天気アイコンデータを読み込む
     weather_icons = load_weather_icons(WEATHER_ICONS_JSON_PATH)
     if not weather_icons:
         page.add(ft.Text("天気アイコンの読み込みに失敗しました。"))
         return
 
-    # UI要素
     center_dropdown = ft.Dropdown(label="地方を選択してください", options=[], on_change=lambda e: update_areas(e))
     area_dropdown = ft.Dropdown(label="地域を選択してください", options=[], on_change=lambda e: update_weather(e))
     weather_output = ft.ListView(expand=True)
 
-    # 地方選択時
     def update_areas(e):
         center_code = center_dropdown.value
         selected_center = area_list["centers"].get(center_code, None)
@@ -74,17 +135,16 @@ def main(page: ft.Page):
             area_dropdown.disabled = True
         page.update()
 
-    # 地域選択時
     def update_weather(e):
         area_code = area_dropdown.value
-        weather_output.controls.clear()  # 表示をクリア
+        weather_output.controls.clear()
         if area_code:
             weather_data = fetch_weather_data(area_code)
             if weather_data:
+                save_weather_data_to_db(area_code, weather_data, weather_icons) 
                 try:
-                    # 天気予報データから抽出
                     forecast_found = False
-                    weather_row = ft.Row(spacing=20)  # 一週間の天気を横に並べるためのRow
+                    weather_row = ft.Row(spacing=20) 
                     for data in weather_data:
                         time_series = data.get("timeSeries", [])
                         for time_data in time_series:
@@ -92,34 +152,27 @@ def main(page: ft.Page):
                             for area in areas:
                                 if area["area"]["code"] == area_code:
                                     forecast_found = True
-                                    # 日付を取得
                                     dates = time_data.get("timeDefines", [])
                                     temps_max = area.get("tempsMax", [])
                                     temps_min = area.get("tempsMin", [])
-                                    # 一週間分の天気を表示
-                                    for i, date in enumerate(dates[:7]):  # 1週間分のデータに制限
-                                        # 日付の形式を「12/6」のように変更
+                                    for i, date in enumerate(dates[:7]): 
                                         formatted_date = f"{int(date[5:7])}/{int(date[8:10])}"
 
-                                        # 天気コードと名称を取得
                                         weather_code = area.get("weatherCodes", [])[i] if i < len(area.get("weatherCodes", [])) else None
                                         weather_desc = area.get("weathers", [])[i] if i < len(area.get("weathers", [])) else "天気データなし"
 
-                                        # アイコンの表示
                                         icon_filename = weather_icons.get(str(weather_code), [None])[0]  # アイコン名を取得
                                         icon_url = None
                                         if icon_filename:
                                             icon_url = f"https://www.jma.go.jp/bosai/forecast/img/{icon_filename}"
 
-                                        # 降水確率と気温（最低、最高）を表示
                                         pop = area.get("pops", [])[i] if i < len(area.get("pops", [])) else "データなし"
                                         temp_max = temps_max[i] if i < len(temps_max) else "データなし"
                                         temp_min = temps_min[i] if i < len(temps_min) else "データなし"
 
-                                        # Rowに日付、天気、アイコン、気温を追加
                                         day_info = ft.Column([
                                             ft.Text(formatted_date, size=12),
-                                            ft.Text(f"{weather_desc}", size=12),  # 天気名称を表示
+                                            ft.Text(f"{weather_desc}", size=12), 
                                             ft.Image(src=icon_url, width=50, height=50) if icon_url else ft.Text("アイコンなし"),
                                             ft.Text(f"降水確率: {pop}%", size=12),
                                             ft.Text(f"最高気温: {temp_max}℃", color=ft.colors.RED, size=12),
@@ -144,13 +197,11 @@ def main(page: ft.Page):
             weather_output.controls.append(ft.Text("地域を選択してください。"))
         page.update()
 
-    # 初期化
     center_dropdown.options = [
         ft.dropdown.Option(code, center["name"]) for code, center in area_list["centers"].items()
     ]
     area_dropdown.disabled = True
 
-    # ページに要素を追加
     page.add(
         ft.Column(
             [
@@ -165,5 +216,7 @@ def main(page: ft.Page):
         )
     )
 
+
+create_db()
 
 ft.app(main)
