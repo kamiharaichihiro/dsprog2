@@ -161,3 +161,113 @@ url_list = ['https://www.jalan.net/yad309590/kuchikomi/']
 scraper = HotelReviewScraper(url_list)
 scraper.fetch_reviews()
 scraper.save_to_db()
+
+
+
+# 以下からは取得したDBを用いて分析および可視化を行う
+import pandas as pd
+import matplotlib.pyplot as plt
+from sqlalchemy import create_engine
+
+class HotelReviewAnalyzer:
+    def __init__(self, db_name='hotel_reviews.db'):
+        self.db_name = db_name
+        self.engine = create_engine(f'sqlite:///{db_name}')
+    
+    def fetch_data(self):
+        # データベースからデータを取得
+        query = """
+        SELECT 
+            age,
+            room_ratings,
+            bath_ratings,
+            breakfast_ratings,
+            dinner_ratings,
+            service_ratings,
+            cleanliness_ratings
+        FROM reviews
+        """
+        df = pd.read_sql(query, self.engine)
+        
+        # 年齢を数値型に変換
+        if df['age'].dtype == 'object':  # ageが文字列型の場合
+            df['age'] = (
+                df['age']
+                .str.replace('代', '', regex=False)  # "代"を削除
+                .str.strip()  # 前後の空白を削除
+                .replace('', None)  # 空文字をNoneに変換
+                .astype(float, errors='ignore')  # 数値型に変換
+            )
+        
+        # 評価を数値型に変換し、欠損値を除外
+        numeric_columns = ['room_ratings', 'bath_ratings', 'breakfast_ratings',
+                           'dinner_ratings', 'service_ratings', 'cleanliness_ratings']
+        for col in numeric_columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+        
+        return df.dropna(subset=['age'] + numeric_columns)  # 欠損値を削除
+
+    def calculate_generation_means(self, df):
+        # 総合評価の計算（各項目の平均）
+        df['overall_rating'] = df[['room_ratings', 'bath_ratings', 'breakfast_ratings',
+                                   'dinner_ratings', 'service_ratings', 'cleanliness_ratings']].mean(axis=1)
+        
+        # 世代ごとにグループ分け（例: 20代, 30代）
+        df['generation'] = (df['age'] // 10 * 10).astype(int)  # 10の位で世代を計算
+        
+        # 世代ごとの平均評価と母数を計算
+        grouped = df.groupby('generation').agg(['mean', 'count'])
+        return grouped
+
+    def display_table(self, grouped):
+        # 平均値と母数を整形して表として表示
+        table = grouped.reset_index()
+        table.columns = ['Generation'] + [
+            f'{col[0]}_{col[1]}' for col in grouped.columns
+        ]
+        print("\n=== 世代ごとの平均評価と母数 ===")
+        print(table.to_string(index=False))
+        return table
+
+    def plot_generation_means(self, grouped):
+        # 評価カテゴリのリスト
+        categories = ['room_ratings', 'bath_ratings', 'breakfast_ratings',
+                      'dinner_ratings', 'service_ratings', 'cleanliness_ratings', 'overall_rating']
+        
+        # 平均点を抽出
+        mean_values = grouped[[col for col in categories]].xs('mean', axis=1, level=1)
+        
+        # 各世代の母数（人数）
+        counts = grouped['overall_rating']['count']
+        
+        # 世代ごとの平均評価を棒グラフで可視化
+        ax = mean_values.plot(kind='bar', figsize=(14, 7), colormap='viridis', edgecolor='black')
+        plt.title('Average Ratings by Generation with Sample Size')
+        plt.ylabel('Rating (1-5)')
+        plt.xlabel('Generation')
+        plt.xticks(rotation=0)
+        plt.ylim(0, 5)
+        plt.grid(axis='y', linestyle='--', alpha=0.7)
+        
+        # 母数を各バーの上に表示
+        for idx, gen in enumerate(mean_values.index):
+            plt.text(idx, 5.1, f'n={counts[gen]}', ha='center', fontsize=10, color='black')
+        
+        plt.legend(title='Categories', bbox_to_anchor=(1.05, 1), loc='upper left')
+        plt.tight_layout()
+        plt.show()
+
+# 使用例
+analyzer = HotelReviewAnalyzer()
+
+# データ取得
+review_data = analyzer.fetch_data()
+
+# 世代ごとの平均を計算
+generation_means = analyzer.calculate_generation_means(review_data)
+
+# 表の表示
+table = analyzer.display_table(generation_means)
+
+# 可視化
+analyzer.plot_generation_means(generation_means)
