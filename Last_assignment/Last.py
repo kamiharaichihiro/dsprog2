@@ -165,6 +165,8 @@ scraper.save_to_db()
 
 
 # 以下からは取得したDBを用いて分析および可視化を行う
+
+#各世代の各項目の平均評価の可視化
 import pandas as pd
 import matplotlib.pyplot as plt
 from sqlalchemy import create_engine
@@ -271,3 +273,28 @@ table = analyzer.display_table(generation_means)
 
 # 可視化
 analyzer.plot_generation_means(generation_means)
+
+
+
+#ヒートマップによる相関行列の可視化
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+import japanize_matplotlib
+from sqlalchemy import create_engine
+
+# 必要なデータを抽出
+columns_to_use = ['sex','age', 'purpose', 'room_type', 'meal_type']
+df = scraper.get_dataframe()[columns_to_use].copy()
+
+# カテゴリデータを数値に変換（ワンホットエンコーディング）
+df_encoded = pd.get_dummies(df, columns=['sex','purpose', 'room_type', 'meal_type'], drop_first=False)
+
+# 相関行列を計算
+correlation_matrix = df_encoded.corr()
+
+# ヒートマップで可視化
+plt.figure(figsize=(10, 8))
+sns.heatmap(correlation_matrix, annot=True, fmt=".2f", cmap="coolwarm", cbar=True)
+plt.title("Correlation Matrix")
+plt.show()
