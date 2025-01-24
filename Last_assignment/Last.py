@@ -298,3 +298,23 @@ plt.figure(figsize=(10, 8))
 sns.heatmap(correlation_matrix, annot=True, fmt=".2f", cmap="coolwarm", cbar=True)
 plt.title("Correlation Matrix")
 plt.show()
+
+
+
+# 各年齢層ごとの部屋タイプの選択の割合
+room_type_age_group = df.groupby(['age', 'room_type']).size().unstack(fill_value=0)
+
+# 割合に変換
+room_type_age_group_percentage = room_type_age_group.div(room_type_age_group.sum(axis=1), axis=0) * 100
+
+# 積み上げ棒グラフで可視化
+room_type_age_group_percentage.plot(kind='bar', stacked=True, colormap='Set2', figsize=(12, 6))
+
+# グラフのタイトルやラベルを設定
+plt.title("年齢層ごとの部屋タイプ選択割合")
+plt.xlabel("年齢層")
+plt.ylabel("部屋タイプ選択割合 (%)")
+plt.xticks(rotation=0)
+plt.legend(title="部屋タイプ", loc='upper right')
+plt.tight_layout()
+plt.show()
